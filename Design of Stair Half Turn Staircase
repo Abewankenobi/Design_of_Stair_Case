@@ -1,0 +1,107 @@
+import math
+
+class StairDesign:
+    def __init__(self):
+        self.concrete_unit_weight = 25
+        self.finish_material_unit_weight = 20
+    def staircase_sizing(self,head_room,floor_len,floor_width,half_turn):
+        if half_turn == "Yes":
+            # Determine number of Treads Per Flight
+            Length_of_tread = 250
+            number_of_tread = floor_len//Length_of_tread
+            # Determine number of Risers per Flight
+            number_of_riser = number_of_tread + 1
+            # Determine Height of Riser
+            height_of_riser = (head_room/2)/number_of_riser
+            return number_of_riser,number_of_tread,height_of_riser
+        else:
+            return "This process works for only Half Turn Staircase spanning Longitudinally instances."
+        
+    def staircase_init_prop(self,effective_span,concrete_cover,landing_width=0,waist_slab="Yes"):
+        if waist_slab == "Yes":
+            # Determine depth of Waist Slab. 20 is goten from BScode
+            waist_height = round((effective_span/20),--1)
+            waist_depth = round(waist_height - (10/2) - concrete_cover,1)
+            return waist_depth,waist_height
+        else:
+            landing_depth = round(landing_width/(20*1.3),-1)
+            landing_height = round(landing_depth + (10/2) + concrete_cover,-1)
+            if landing_depth >= 125:
+                return landing_depth,landing_height
+            else:
+                return 125,150
+
+    def flight_loadings(self,riser_height,tread_width,waist_slab_thickness,floor_finish_thickness,live_load): 
+        angle = math.atan((riser_height/tread_width))
+        # Determine self weight of waist slab in Kn/m2
+        resultant = ((riser_height**2)+(tread_width**2))**0.5
+        waist_slab_self_weight = self.concrete_unit_weight * (waist_slab_thickness/1000)/ math.cos(angle)
+        # Determine self weight of steps
+        steps_self_weight = self.concrete_unit_weight * 0.5 * (riser_height/1000)
+        #Determine Floor Finish Load
+        floor_finish_load = (floor_finish_thickness/1000) * self.finish_material_unit_weight
+        # Calculate Factore Load on Flight
+        flight_factored_load = 1.4*(waist_slab_self_weight+steps_self_weight+floor_finish_load) + 1.6*(live_load)
+        return math.ceil(flight_factored_load)
+
+    def landing_loading(self,slab_thickness,finish_thickness,live_load):
+        # Determine self wieght of Landing slab
+        slab_self_weight = self.concrete_unit_weight * (slab_thickness/1000)
+        floor_finish = self.finish_material_unit_weight * (finish_thickness/1000)
+        factored_load = 1.4*(slab_self_weight+floor_finish) + 1.6*(live_load)
+        return factored_load
+    
+    def moment_calculation(self,flight_landing_len,factored_flight_load,factored_landing_load,landing_len,flight_len):
+        # Length should be given in meters
+        # Determine Reactions
+        reaction_b = (factored_landing_load*landing_len*(landing_len*1.5+flight_len)+
+                      factored_flight_load*flight_len*(0.5*flight_len+landing_len)+
+                      factored_landing_load*landing_len*1.5)/(flight_landing_len)
+        reaction_a = reaction_b # Due to semetry in Loading and support conditions
+        # Moment calculations
+        maximum_moment_flight = (reaction_a*(flight_landing_len/2)-factored_landing_load*landing_len*(0.5*landing_len+0.5*flight_len)
+                          - factored_flight_load*0.5*flight_len*0.25*flight_len)
+        maximum_moment_landing = reaction_a*(landing_len/2) - factored_landing_load*landing_len*0.5*(0.25*landing_len)
+        return maximum_moment_flight,maximum_moment_landing
+    
+    def reinforcement_calculation(self,maximum_moment,concrete_grade,steel_grade,depth,height,breadth=1000): # Can be used for both Landing and Flight
+        k = maximum_moment*(10**6)/(concrete_grade*breadth*depth**2)
+        if k > 0.156:
+            k = 0.156
+        z = depth*(0.5 + (0.25-(k/0.9))**0.5)
+        if z > 0.95 * depth:
+            z = 0.95 * depth
+        area_steel_req_prov = math.ceil(maximum_moment*(10**6)/(0.95*steel_grade*z))
+        area_steel_min_prov = math.ceil((0.13 * breadth * height)/100)
+        return area_steel_req_prov,area_steel_min_prov
+    
+    def deflection_check(self,area_steel_req,area_steel_prov,steel_grade,maximum_moment,breadth,depth):
+        fs = (2*area_steel_req*steel_grade)/(3*area_steel_prov)
+        moment_breadth_depth_ratio = maximum_moment*10**6/(breadth*depth**2)
+        if moment_breadth_depth_ratio > 2:
+            moment_breadth_depth_ratio = 2
+        modification_factor = 0.55 + ((477-fs)/120*(0.9+moment_breadth_depth_ratio))
+        if modification_factor > 2:
+            modification_factor = 2
+        limit_span_depth_ratio = 20 * modification_factor
+        actual_span_depth_ratio = breadth/depth
+        if limit_span_depth_ratio > actual_span_depth_ratio:
+            return "DEFLECTION IS OK"
+        return "DEFLECTION IS NOT OK"
+    
+    def shear_check(self,max_shear,breadth,depth,area_steel_prov,concrete_grade):
+        shear_stress = max_shear*10**3/(breadth*depth)
+        a,b = 0.8*concrete_grade**0.5,25
+        v_max = a if a < b else b
+        if shear_stress > v_max:
+            return "CHECK SHEAR"
+        x = 100*area_steel_prov/(breadth*depth)
+        y = (400/depth)**0.25
+        Vc = (0.79*x*y)/1.25
+        if concrete_grade > 25:
+            Vc = Vc * (concrete_grade/25)**0.333
+        if shear_stress < Vc:
+            return "SHEAR IS OK"
+        return "SHEAR IS NOT OK"  
+    
+stair_design = StairDesign()
